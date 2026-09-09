@@ -5,10 +5,20 @@ import base64
 import logging
 import threading
 import re
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+# ИСПРАВЛЕНИЕ ДЛЯ СТАРЫХ БИБЛИОТЕК НА НОВЫХ ВЕРСИЯХ PYTHON
+# Принудительно создаем event loop в главном потоке до импорта pyrogram
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 from pyrogram import Client
 
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +26,6 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = "8876639758:AAFXOoDLyFd2C9B90QQlGRsd4-RnUMvqiZo"
 ADMIN_ID = 8669477816
 
-# Данные для запуска фоновых сессий (твои API ID и Hash)
 API_ID = 39188918
 API_HASH = "41aaeaa0c6f9a61c0504395ccf5f3b3c"
 
@@ -50,7 +59,6 @@ conn.commit()
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Хранилище активных клиентов в памяти, чтобы читать коды динамически
 active_clients = {}
 
 def admin_kb():
@@ -78,10 +86,9 @@ async def call_stats(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "help")
 async def call_help(callback: types.CallbackQuery):
-    await callback.message.answer("📝 **Инструкция для Админа:**\n\n1. Отправь мне файл `.session` как документ — он сохранится в базу.\n2. Чтобы подарить аккаунт, напиши команду:\n`/gift ЧИСЛОВОЙ_ID_ПОЛЬЗОВАТЕЛЯ` (например, `/gift 12345678`)\n\nБот сам выберет первый свободный аккаунт и передаст его человеку.")
+    await callback.message.answer("📝 **Инструкция для Админа:**\n\n1. Отправь мне файл `.session` как документ — он сохранится в базу.\n2. Чтобы подарить аккаунт, напиши команду:\n`/gift ID_ПОЛЬЗОВАТЕЛЯ` (например, `/gift 8669477816`)\n\nБот сам выберет первый свободный аккаунт и передаст его человеку.")
     await callback.answer()
 
-# Прием документов от админа
 @dp.message(F.document)
 async def get_document(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
@@ -97,7 +104,6 @@ async def get_document(message: types.Message):
     conn.commit()
     await message.answer(f"✅ Аккаунт `{message.document.file_name}` успешно засейвлен в текстовую базу!")
 
-# КОМАНДА ДЛЯ ПОДАРКА: /gift ID
 @dp.message(Command("gift"))
 async def gift_account(message: types.Message):
     if message.from_user.id != ADMIN_ID: return
@@ -109,7 +115,6 @@ async def gift_account(message: types.Message):
         
     target_user_id = int(args[1])
     
-    # Ищем первый свободный аккаунт в базе
     cursor.execute("SELECT id, file_name FROM accounts WHERE status='free' LIMIT 1")
     account = cursor.fetchone()
     
@@ -119,11 +124,9 @@ async def gift_account(message: types.Message):
         
     acc_id, file_name = account
     
-    # Обновляем статус аккаунта в базе данных
     cursor.execute("UPDATE accounts SET status='gifted', owner_id=? WHERE id=?", (target_user_id, acc_id))
     conn.commit()
     
-    # Отправляем уведомление счастливчику
     try:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎁 Начать вход в аккаунт", callback_data=f"user_start_{acc_id}")]
@@ -135,9 +138,8 @@ async def gift_account(message: types.Message):
         )
         await message.answer(f"✅ Аккаунт `{file_name}` успешно забронирован и отправлен пользователю `{target_user_id}`!")
     except Exception as e:
-        await message.answer(f"❌ Не удалось отправить сообщение пользователю (возможно, бот заблокирован или не запущен пользователем): {e}")
+        await message.answer(f"❌ Не удалось отправить сообщение: {e}")
 
-# ОБРАБОТКА ДЕЙСТВИЙ ПОЛЬЗОВАТЕЛЯ (ВХОД И ПОЛУЧЕНИЕ КОДА)
 @dp.callback_query(F.data.startswith("user_start_"))
 async def user_start_login(callback: types.CallbackQuery):
     acc_id = int(callback.data.split("_")[2])
@@ -152,7 +154,6 @@ async def user_start_login(callback: types.CallbackQuery):
     b64_data = res[0]
     session_bytes = base64.b64decode(b64_data)
     
-    # Восстанавливаем временный файл сессии на сервере для подключения
     temp_session_path = f"user_{callback.from_user.id}"
     with open(f"{temp_session_path}.session", "wb") as f:
         f.write(session_bytes)
@@ -160,15 +161,12 @@ async def user_start_login(callback: types.CallbackQuery):
     await callback.message.edit_text("⏳ Подключаемся к серверам Telegram для инициализации входа...")
     
     try:
-        # Запускаем фоновый Pyrogram клиент для этого аккаунта
         app = Client(temp_session_path, api_id=API_ID, api_hash=API_HASH)
         await app.start()
         
-        # Получаем информацию о привязанном номере телефона
         me = await app.get_me()
         phone = me.phone_number
         
-        # Сохраняем запущенного клиента в глобальный массив, чтобы использовать при нажатии кнопок
         active_clients[callback.from_user.id] = app
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -187,7 +185,6 @@ async def user_start_login(callback: types.CallbackQuery):
         await callback.message.answer(f"❌ Ошибка инициализации сессии. Обратитесь к админу. Текст: {e}")
     await callback.answer()
 
-# НАЖАТИЕ КНОПКИ "ПОЛУЧИТЬ КОД"
 @dp.callback_query(F.data.startswith("user_getcode_"))
 async def user_get_code_msg(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -200,14 +197,9 @@ async def user_get_code_msg(callback: types.CallbackQuery):
     await callback.answer("🔎 Ищу код в чатах...")
     
     try:
-        # Проверяем последние диалоги в аккаунте
         async for dialog in app.get_dialogs(limit=10):
-            # Ищем системный чат Telegram (у него ID всегда 777000)
             if dialog.chat.id == 777000:
-                # Берем последнее сообщение
                 msg_text = dialog.top_message.text
-                
-                # Ищем регулярным выражением 5 цифр подряд (это и есть код авторизации)
                 code_match = re.search(r'\b\d{5}\b', msg_text)
                 
                 if code_match:
@@ -218,7 +210,6 @@ async def user_get_code_msg(callback: types.CallbackQuery):
                         f"Ввидите его на своем устройстве для завершения входа!"
                     )
                     
-                    # Закрываем фоновый клиент и подчищаем файлы, чтобы не нагружать память
                     await app.stop()
                     del active_clients[user_id]
                     if os.path.exists(f"user_{user_id}.session"):
@@ -235,4 +226,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+                
