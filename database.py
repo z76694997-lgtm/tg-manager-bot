@@ -1,7 +1,7 @@
 import psycopg2
 
-# Твоя вечная облачная база данных со вшитым паролем
-DB_URI = "postgresql://postgres:ZSadSad55%26%26%26@db.vldwbyvskptwubpvhuxn.supabase.co:5432/postgres"
+# Твоя точная вечная база данных со вшитым паролем
+DB_URI = "postgresql://postgres:ZSadSad55%26%26%26@db.kcmkzgjbvgmzppfelgmj.supabase.co:5432/postgres"
 
 def get_conn():
     return psycopg2.connect(DB_URI)
