@@ -43,8 +43,32 @@ async def admin_view_all(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "help")
 async def call_help(callback: types.CallbackQuery):
-    await callback.message.answer("📝 **Памятка для Админа:**\n\n1. **Добавление:** Скинь файл `.session`.\n\n2. **Установка ЦЕНЫ:**\n`/setprice [номер] [цена]`\nПример: `/setprice 79991234567 150`\n\n3. **Установка ПАРОЛЯ 2FA:**\n`/setpass [номер] [пароль]`\n\n4. **ПОДАРЯТЬ БЕСПЛАТНО:**\n`/gift [ID_ЮЗЕРА] [НОМЕР]`\n\n5. **ПОДТВЕРДИТЬ ОПЛАТУ (ВЫДАЧА):**\n`/confirm [НОМЕР] [ID_ЮЗЕРА]`")
+    await callback.message.answer(
+        "📝 **Памятка для Админа:**\n\n"
+        "1. **Добавление:** Скинь файл `.session` как документ.\n\n"
+        "2. **Установка ЦЕНЫ:**\n`/setprice [номер] [цена]`\n"
+        "Пример: `/setprice 79991234567 150`\n\n"
+        "3. **Установка ПАРОЛЯ 2FA:**\n`/setpass [номер] [пароль]`\n"
+        "Пример: `/setpass 79991234567 pass123`\n\n"
+        "4. **ПОДАРЯТЬ БЕСПЛАТНО:**\n`/gift [ID_ЮЗЕРА] [НОМЕР]`\n\n"
+        "5. **ПОДТВЕРДИТЬ ОПЛАТУ (ВЫДАЧА):**\n`/confirm [НОМЕР] [ID_ЮЗЕРА]`"
+    )
     await callback.answer()
+
+@router.message(Command("setpass"))
+async def set_password(message: types.Message):
+    if message.from_user.id != config.ADMIN_ID: return
+    
+    text_parts = message.text.split()
+    if len(text_parts) < 3:
+        await message.answer("❌ Формат команды: `/setpass [номер_без_плюса] [пароль]`")
+        return
+    
+    target_phone = text_parts[1]
+    target_password = text_parts[2]
+    
+    database.set_account_password(target_phone, target_password)
+    await message.answer(f"✅ Пароль 2FA для аккаунта `+{target_phone}` успешно сохранен в базу!")
 
 @router.callback_query(F.data == "user_my_accs")
 async def user_my_accounts(callback: types.CallbackQuery):
