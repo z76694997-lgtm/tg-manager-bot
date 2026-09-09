@@ -3,9 +3,9 @@ import sqlite3
 DB_NAME = "manager.db"
 
 def init_db():
-    """Создает локальную таблицу прямо на сервере Render"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    # Добавляем поле price INTEGER DEFAULT 0 для хранения цен
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,6 +16,7 @@ def init_db():
         spamblock TEXT DEFAULT 'Не проверен',
         tg_id TEXT DEFAULT 'Неизвестно',
         status TEXT DEFAULT 'free',
+        price INTEGER DEFAULT 0,
         owner_id INTEGER DEFAULT NULL
     )
     """)
@@ -32,6 +33,13 @@ def add_account(file_name, b64_data, phone, tg_id, spamblock):
     conn.commit()
     conn.close()
 
+def set_account_price(phone, price):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET price=? WHERE phone=?", (price, phone))
+    conn.commit()
+    conn.close()
+
 def set_account_password(phone, password):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -42,7 +50,7 @@ def set_account_password(phone, password):
 def get_free_account_by_phone(phone):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, password FROM accounts WHERE phone=? AND status='free'", (phone,))
+    cursor.execute("SELECT id, password, price FROM accounts WHERE phone=? AND status='free'", (phone,))
     res = cursor.fetchone()
     conn.close()
     return res
